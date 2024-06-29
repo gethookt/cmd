@@ -39,7 +39,7 @@ jobs:
             unit.html
           name: coverprofile-unit.html
         if: always()
-      - uses: test-summary/action@v2.3
+      - uses: test-summary/action@v2.4
         with:
           paths: |
             unit.xml
