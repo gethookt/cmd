@@ -1,0 +1,60 @@
+jobs:
+  - id: example
+    plugins:
+      - uses: nats
+        with:
+          credentials: ${{ env "NATS_CREDS" }}
+          subscribe:
+            subject: example
+      - uses: event
+        with:
+          source: nats
+          timeout: 5m
+      - uses: http
+        with:
+          headers:
+            Authorization: ${{ env "HTTP_AUTH" }}
+      - uses: webhook
+        with:
+          handle:
+            /echo: ${{ set-var 'webhook-url' . }}
+          do:
+            method: ${{ . }}
+            headers: ${{ . }}
+            body: ${{ . }}
+    steps:
+      - uses: http
+        bad: true
+        with:
+          request:
+            method: POST
+            url: ${{ var "webhook-url" }}
+            headers:
+              Content-Type: application/json
+            body: |-
+              {
+                "message": "Hello, world!"
+              }
+          response:
+            status: 200
+            headers:
+              Content-Type: application/json
+            body:
+              .message: Hello, world!
+      - uses: event
+        with:
+          on:
+            subject: example
+          ok:
+            data:
+              .message: hi
+          fail:
+            data:
+              .message: bye
+      - uses: nats
+        defer: 10s
+        with:
+          publish:
+            subject: example
+            data:
+              message: hi

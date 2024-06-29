@@ -1,0 +1,8 @@
+- on:
+    topic: example
+    data:
+      .message: hi
+  ok:
+    .status: ok
+  fail:
+    .status: fail

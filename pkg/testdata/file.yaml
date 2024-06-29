@@ -1,0 +1,23 @@
+jobs:
+  - id: example
+    plugins:
+      - id: file
+        uses: inline
+        with:
+          publish:
+            file: ${{ env "HOOKT_FILE" }}
+      - uses: event
+        with:
+          sources:
+          - file
+    steps:
+      - uses: event
+        with:
+          on:
+            subject: example
+          ok:
+            data:
+              .message: hi
+          fail:
+            data:
+              .message: bye

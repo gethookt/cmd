@@ -1,0 +1,46 @@
+name: |
+  TESTING
+
+on: push
+
+jobs:
+  vet:
+    timeout-minutes: 15
+    runs-on:
+    - ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+  unit:
+    timeout-minutes: 15
+    runs-on:
+    - ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+        if: always()
+      - run: |
+          go install github.com/jstemmer/go-junit-report@latest
+        if: always()
+      - run: |
+          go test -v -cover -coverprofile unit.out -race ./... | tee /dev/stderr | go-junit-report -set-exit-code > unit.xml
+          go tool cover -html unit.out -o unit.html
+        if: always()
+      - uses: actions/upload-artifact@v4
+        with:
+          path: |
+            unit.html
+          name: coverprofile-unit.html
+        if: always()
+      - uses: test-summary/action@v2.3
+        with:
+          paths: |
+            unit.xml
+        if: always()
