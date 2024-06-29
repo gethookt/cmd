@@ -7,6 +7,7 @@ import (
 	"os/signal"
 
 	"hookt.dev/cmd/pkg/command"
+	"hookt.dev/cmd/pkg/trace"
 
 	"github.com/spf13/cobra"
 )
@@ -60,7 +61,12 @@ func newRunCommand(ctx context.Context, app *command.App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:  "run",
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, files []string) error {
+		RunE: func(cmd *cobra.Command, files []string) error {
+			if cmd.Flags().Changed("debug") {
+				ctx = trace.WithJob(ctx, trace.LogJob())
+				ctx = trace.WithPattern(ctx, trace.LogPattern())
+			}
+
 			s, err := app.Engine.Run(ctx, files[0])
 			if err != nil {
 				return err

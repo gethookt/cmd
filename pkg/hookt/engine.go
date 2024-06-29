@@ -2,15 +2,15 @@ package hookt
 
 import (
 	"context"
-	"io/ioutil"
 	"log/slog"
+	"os"
 
 	"github.com/lmittmann/tint"
+	"golang.org/x/sync/errgroup"
 	"hookt.dev/cmd/pkg/check"
 	"hookt.dev/cmd/pkg/errors"
 	"hookt.dev/cmd/pkg/plugin/builtin"
 	"hookt.dev/cmd/pkg/proto"
-	"golang.org/x/sync/errgroup"
 )
 
 var plugins []proto.Interface
@@ -38,7 +38,7 @@ func New(opts ...func(*Engine)) *Engine {
 }
 
 func (e *Engine) Run(ctx context.Context, file string) (*check.S, error) {
-	p, err := ioutil.ReadFile(file)
+	p, err := os.ReadFile(file)
 	if err != nil {
 		return nil, errors.New("failed to read file: %w", err)
 	}

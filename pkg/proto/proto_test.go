@@ -2,14 +2,28 @@ package proto_test
 
 import (
 	"context"
-	"io/ioutil"
+	"log/slog"
+	"os"
 	"testing"
+	"time"
 
 	"hookt.dev/cmd/pkg/plugin/builtin"
 	"hookt.dev/cmd/pkg/proto"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/lmittmann/tint"
 )
+
+func init() {
+	slog.SetDefault(
+		slog.New(
+			tint.NewHandler(os.Stderr, &tint.Options{
+				AddSource:  true,
+				Level:      slog.LevelDebug,
+				TimeFormat: time.Kitchen,
+			}),
+		),
+	)
+}
 
 func newP() *proto.P {
 	p := builtin.Plugins()
@@ -32,13 +46,15 @@ func TestParse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	spew.Dump(w)
+	_ = w
+
+	// spew.Dump(w)
 }
 
 func file(t *testing.T, path string) []byte {
 	t.Helper()
 
-	p, err := ioutil.ReadFile(path)
+	p, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}

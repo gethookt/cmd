@@ -2,9 +2,11 @@ package proto_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 
 	"hookt.dev/cmd/pkg/proto/wire"
+	"hookt.dev/cmd/pkg/trace"
 )
 
 func TestPattern(t *testing.T) {
@@ -74,7 +76,7 @@ func TestPattern(t *testing.T) {
 		},
 		5: {
 			wire.Object{
-				".foo.bar": []byte(`"${{ setvar "bar" . }}"`),
+				".foo.bar": []byte(strconv.Quote(`${{ setvar "bar" . }}`)),
 			},
 			map[string]any{
 				"foo": map[string]any{
@@ -85,7 +87,7 @@ func TestPattern(t *testing.T) {
 		},
 		6: {
 			wire.Object{
-				".foo.bar": []byte(`"${{ var "bar" }}"`),
+				".foo.bar": []byte(strconv.Quote(`${{ var "bar" }}`)),
 			},
 			map[string]any{
 				"foo": map[string]any{
@@ -136,6 +138,7 @@ func TestPattern(t *testing.T) {
 
 	p := newP()
 	ctx := context.Background()
+	ctx = trace.WithPattern(ctx, trace.LogPattern())
 
 	for _, cas := range cases {
 		t.Run("", func(t *testing.T) {
@@ -146,7 +149,7 @@ func TestPattern(t *testing.T) {
 
 			ok, err := pt.Match(ctx, cas.obj)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("match: Match()=%+v", err)
 			}
 
 			if ok != cas.ok {

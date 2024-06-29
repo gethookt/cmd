@@ -10,9 +10,9 @@ import (
 
 	"hookt.dev/cmd/pkg/async"
 	"hookt.dev/cmd/pkg/errors"
+	"hookt.dev/cmd/pkg/trace"
 
 	"github.com/Masterminds/sprig"
-	"github.com/google/go-cmp/cmp"
 	"sigs.k8s.io/yaml"
 )
 
@@ -64,28 +64,39 @@ func (t *T) funcs() template.FuncMap {
 }
 
 func (t *T) Match(ctx context.Context, data string) func(context.Context, any) (bool, error) {
+	tr := trace.ContextPattern(ctx)
 	tmpl, err := t.Parse("", data)
+	tr.TemplateValue("", data, tmpl, err)
 	if err != nil {
 		return func(context.Context, any) (bool, error) { return false, err }
 	}
-	return func(_ context.Context, x any) (bool, error) {
-		var buf bytes.Buffer
+	return func(ctx context.Context, got any) (bool, error) {
+		var (
+			buf bytes.Buffer
+			tr  = trace.ContextPattern(ctx)
+		)
 
-		if err := tmpl.Execute(&buf, x); err != nil {
+		err := tmpl.Execute(&buf, got)
+		tr.ExecuteMatch("", buf.Bytes(), err)
+		if err != nil {
 			return false, errors.New("failed to evaluate %q: %w", data, err)
 		}
 
-		var v any
+		var want any
 
-		if err := yaml.Unmarshal(buf.Bytes(), &v); err != nil {
+		err = yaml.Unmarshal(buf.Bytes(), &want)
+		tr.UnmarshalMatch("", buf.Bytes(), want, err)
+		if err != nil {
 			return false, errors.New("failed to parse result: %w", err)
 		}
 
-		switch v := v.(type) {
+		switch want := want.(type) {
 		case bool:
-			return v, nil
+			return want, nil
 		default:
-			return cmp.Equal(x, v), nil
+			ok := cmpEqual(want, got)
+			tr.EqualMatch("", want, got, ok)
+			return ok, nil
 		}
 	}
 }

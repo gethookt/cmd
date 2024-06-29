@@ -61,7 +61,7 @@ func (p *P) Parse(ctx context.Context, q []byte) (*Workflow, error) {
 
 	var (
 		w  Workflow
-		tr = trace.ContextJobTrace(ctx)
+		tr = trace.ContextJob(ctx)
 	)
 
 	w.Jobs = make([]Job, len(raw.Jobs))

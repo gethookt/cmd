@@ -1,7 +1,7 @@
 package wire_test
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -36,7 +36,7 @@ func TestParse(t *testing.T) {
 func file(t *testing.T, path string) []byte {
 	t.Helper()
 
-	p, err := ioutil.ReadFile(path)
+	p, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
