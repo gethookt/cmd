@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strconv"
 
 	"github.com/lmittmann/tint"
 	"golang.org/x/sync/errgroup"
@@ -11,6 +12,7 @@ import (
 	"hookt.dev/cmd/pkg/errors"
 	"hookt.dev/cmd/pkg/plugin/builtin"
 	"hookt.dev/cmd/pkg/proto"
+	"hookt.dev/cmd/pkg/trace"
 )
 
 var plugins []proto.Interface
@@ -43,17 +45,24 @@ func (e *Engine) Run(ctx context.Context, file string) (*check.S, error) {
 		return nil, errors.New("failed to read file: %w", err)
 	}
 
+	var s check.S
+
+	ctx = trace.WithPattern(ctx, trace.ContextPattern(ctx).Join(s.Trace()))
+
 	w, err := e.p.Parse(ctx, p)
 	if err != nil {
 		return nil, errors.New("failed to parse file: %w", err)
 	}
 
-	var s check.S
-
 	var g errgroup.Group
 
-	for _, job := range w.Jobs {
-		for _, step := range job.Steps {
+	for i, job := range w.Jobs {
+		ctx := trace.With(ctx, "job", job.ID)
+		ctx = trace.With(ctx, "job-index", strconv.Itoa(i))
+		for j, step := range job.Steps {
+			ctx := trace.With(ctx, "step", step.ID)
+			ctx = trace.With(ctx, "step-desc", step.Desc)
+			ctx = trace.With(ctx, "step-index", strconv.Itoa(j))
 			g.Go(func() error {
 				r, ok := step.With.(proto.Runner)
 				if !ok {
@@ -80,5 +89,16 @@ func (e *Engine) Run(ctx context.Context, file string) (*check.S, error) {
 		}
 	}
 
-	return &s, g.Wait()
+	done := make(chan error)
+
+	go func() {
+		done <- g.Wait()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return &s, ctx.Err()
+	case err := <-done:
+		return &s, err
+	}
 }

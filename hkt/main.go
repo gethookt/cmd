@@ -72,7 +72,7 @@ func newRunCommand(ctx context.Context, app *command.App) *cobra.Command {
 				return err
 			}
 
-			return app.Render(s)
+			return app.Render(s.Events)
 		},
 		Version:      version,
 		SilenceUsage: true,
