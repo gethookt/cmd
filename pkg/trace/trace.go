@@ -109,8 +109,14 @@ func LogPattern() PatternTrace {
 		},
 		EqualMatch: func(ctx context.Context, want any, got any, ok bool) {
 			tags := append(attrs(ctx),
-				"want", fmt.Sprintf("%+[1]v (%[1]T)", want),
-				"got", fmt.Sprintf("%+[1]v (%[1]T)", got),
+				slog.Group("want",
+					"value", want,
+					"type", fmt.Sprintf("%T", want),
+				),
+				slog.Group("got",
+					"value", got,
+					"type", fmt.Sprintf("%T", got),
+				),
 			)
 			if !ok {
 				slog.Error("trace: EqualMatch", tags...)
@@ -128,6 +134,9 @@ func LogPattern() PatternTrace {
 func attrs(ctx context.Context) []any {
 	var attrs []any
 
+	if seq := Get(ctx, "event-seq"); seq != "" {
+		attrs = append(attrs, "event-seq", seq)
+	}
 	if job := Get(ctx, "job"); job != "" {
 		attrs = append(attrs, "job", job)
 	}

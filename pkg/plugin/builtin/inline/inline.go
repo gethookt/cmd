@@ -75,7 +75,7 @@ func (p *Plugin) publish(f *os.File) {
 
 	dec := json.NewDecoder(f)
 
-	for {
+	for index := 0; ; index++ {
 		var raw json.RawMessage
 
 		err := dec.Decode(&raw)
@@ -97,7 +97,7 @@ func (p *Plugin) publish(f *os.File) {
 				"bytes", len(raw),
 			)
 
-			p.c <- protowire.MakeMessage(raw)
+			p.c <- &protowire.Message{P: raw, I: index}
 		case '[':
 			var msgs []json.RawMessage
 
@@ -109,12 +109,12 @@ func (p *Plugin) publish(f *os.File) {
 				return
 			}
 
-			for i := range msgs {
+			for i := 0; i < len(msgs); i, index = i+1, index+1 {
 				slog.Debug("inline: publish",
 					"bytes", len(msgs[i]),
 				)
 
-				p.c <- protowire.MakeMessage(msgs[i])
+				p.c <- &protowire.Message{P: msgs[i], I: index}
 			}
 		default:
 			err = errors.New("unexpected JSON input")

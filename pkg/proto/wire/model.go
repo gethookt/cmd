@@ -16,12 +16,11 @@ type Job struct {
 }
 
 type Message struct {
+	I int    `json:"index,omitempty"`
 	P []byte `json:"bytes,omitempty"`
 }
 
-func MakeMessage(p json.RawMessage) *Message {
-	return &Message{P: p}
-}
+func (m *Message) Index() int { return m.I }
 
 func (m *Message) Bytes() []byte { return m.P }
 
