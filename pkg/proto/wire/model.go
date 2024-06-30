@@ -2,6 +2,7 @@ package wire
 
 import (
 	"encoding/json"
+	"log/slog"
 )
 
 type Workflow struct {
@@ -9,7 +10,7 @@ type Workflow struct {
 }
 
 type Job struct {
-	ID      string   `json:"id"`
+	ID      string   `json:"id,omitempty"`
 	Plugins []Plugin `json:"plugins"`
 	Steps   []Step   `json:"steps"`
 }
@@ -35,6 +36,14 @@ func (m *Message) Object() any {
 type Generic = json.RawMessage
 
 type Object map[string]Generic
+
+func (o Object) LogValue() slog.Value {
+	p, err := json.Marshal(o)
+	if err != nil {
+		panic("unexpected error: " + err.Error())
+	}
+	return slog.StringValue(string(p))
+}
 
 type Step struct {
 	Uses    string          `json:"uses"`

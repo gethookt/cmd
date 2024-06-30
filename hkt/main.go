@@ -68,11 +68,10 @@ func newRunCommand(ctx context.Context, app *command.App) *cobra.Command {
 			}
 
 			s, err := app.Engine.Run(ctx, files[0])
-			if err != nil {
-				return err
-			}
 
-			return app.Render(s)
+			app.Render(s.Events)
+
+			return err
 		},
 		Version:      version,
 		SilenceUsage: true,

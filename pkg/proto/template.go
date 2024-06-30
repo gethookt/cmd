@@ -66,10 +66,11 @@ func (t *T) funcs() template.FuncMap {
 func (t *T) Match(ctx context.Context, data string) func(context.Context, any) (bool, error) {
 	tr := trace.ContextPattern(ctx)
 	tmpl, err := t.Parse("", data)
-	tr.TemplateValue("", data, tmpl, err)
+	tr.TemplateValue(ctx, data, tmpl, err)
 	if err != nil {
 		return func(context.Context, any) (bool, error) { return false, err }
 	}
+
 	return func(ctx context.Context, got any) (bool, error) {
 		var (
 			buf bytes.Buffer
@@ -77,7 +78,7 @@ func (t *T) Match(ctx context.Context, data string) func(context.Context, any) (
 		)
 
 		err := tmpl.Execute(&buf, got)
-		tr.ExecuteMatch("", buf.Bytes(), err)
+		tr.ExecuteMatch(ctx, buf.Bytes(), err)
 		if err != nil {
 			return false, errors.New("failed to evaluate %q: %w", data, err)
 		}
@@ -85,7 +86,7 @@ func (t *T) Match(ctx context.Context, data string) func(context.Context, any) (
 		var want any
 
 		err = yaml.Unmarshal(buf.Bytes(), &want)
-		tr.UnmarshalMatch("", buf.Bytes(), want, err)
+		tr.UnmarshalMatch(ctx, buf.Bytes(), want, err)
 		if err != nil {
 			return false, errors.New("failed to parse result: %w", err)
 		}
@@ -95,7 +96,7 @@ func (t *T) Match(ctx context.Context, data string) func(context.Context, any) (
 			return want, nil
 		default:
 			ok := cmpEqual(want, got)
-			tr.EqualMatch("", want, got, ok)
+			tr.EqualMatch(ctx, want, got, ok)
 			return ok, nil
 		}
 	}

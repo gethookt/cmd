@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"text/template"
+	"sort"
 
 	"hookt.dev/cmd/pkg/errors"
 	"hookt.dev/cmd/pkg/proto/wire"
@@ -15,14 +15,21 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-type Pattern map[*gojq.Query]func(context.Context, any) (bool, error)
+type Pattern struct {
+	Key   *gojq.Query
+	Match func(context.Context, any) (bool, error)
+}
 
-func (p Pattern) Match(ctx context.Context, obj any) (bool, error) {
-	for q, fn := range p {
-		it := q.RunWithContext(ctx, obj)
+type Patterns []*Pattern
+
+func (p Patterns) Match(ctx context.Context, obj any) (bool, error) {
+	for _, p := range p {
+		ctx := pattern(ctx, p.Key.String())
+
+		it := p.Key.RunWithContext(ctx, obj)
 
 		slog.Debug("pattern",
-			"query", q.String(),
+			"query", p.Key.String(),
 		)
 
 		// TODO: Handle multiple results?
@@ -31,9 +38,9 @@ func (p Pattern) Match(ctx context.Context, obj any) (bool, error) {
 			return false, nil
 		}
 
-		ok, err := fn(ctx, v)
+		ok, err := p.Match(ctx, v)
 		if err != nil {
-			return false, errors.New("failed to match jq %q: %w", q.String(), err)
+			return false, errors.New("failed to match jq %q: %w", p.Key.String(), err)
 		}
 		if !ok {
 			return false, nil
@@ -43,16 +50,27 @@ func (p Pattern) Match(ctx context.Context, obj any) (bool, error) {
 	return len(p) != 0, nil
 }
 
-func (p *P) Pattern(ctx context.Context, obj wire.Object) (Pattern, error) {
+func pattern(ctx context.Context, name string) context.Context {
+	return trace.With(ctx, "pattern", name)
+}
+
+func (p *P) Patterns(ctx context.Context, obj wire.Object) (Patterns, error) {
 	var (
-		pt  = make(Pattern)
+		pt  = make(Patterns, 0, len(obj))
 		tr  = trace.ContextPattern(ctx)
 		err error
 	)
 
 	for k, raw := range obj {
-		q, e := gojq.Parse(k)
-		tr.ParseKey(k, q, e)
+		var (
+			e error
+			q Pattern
+		)
+
+		ctx := pattern(ctx, k)
+
+		q.Key, e = gojq.Parse(k)
+		tr.ParseKey(ctx, q.Key, e)
 		if e != nil {
 			err = errors.Join(
 				err,
@@ -64,7 +82,7 @@ func (p *P) Pattern(ctx context.Context, obj wire.Object) (Pattern, error) {
 		var want any
 
 		e = yaml.Unmarshal(raw, &want)
-		tr.UnmarshalValue(k, raw, want, e)
+		tr.UnmarshalValue(ctx, raw, want, e)
 		if e != nil {
 			err = errors.Join(
 				err,
@@ -80,19 +98,23 @@ func (p *P) Pattern(ctx context.Context, obj wire.Object) (Pattern, error) {
 
 		switch want := want.(type) {
 		case bool:
-			pt[q] = func(_ context.Context, got any) (bool, error) { return want || got == nil, nil }
+			q.Match = func(_ context.Context, got any) (bool, error) { return want || got == nil, nil }
 		case string:
-			tv := tr.TemplateValue
-			tr.TemplateValue = func(_, v string, t *template.Template, e error) { tv(k, v, t, e) }
-			pt[q] = p.t.Match(trace.WithPattern(ctx, tr), want)
+			q.Match = p.t.Match(ctx, want)
 		default:
-			pt[q] = func(_ context.Context, got any) (bool, error) {
+			q.Match = func(_ context.Context, got any) (bool, error) {
 				ok := cmpEqual(want, got)
-				tr.EqualMatch(k, want, got, ok)
+				tr.EqualMatch(ctx, want, got, ok)
 				return ok, nil
 			}
 		}
+
+		pt = append(pt, &q)
 	}
+
+	sort.Slice(pt, func(i, j int) bool {
+		return pt[i].Key.String() < pt[j].Key.String()
+	})
 
 	return pt, err
 }

@@ -2,7 +2,6 @@ package event // import "hookt.dev/cmd/pkg/plugin/builtin/event"
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
 	"time"
 
@@ -10,6 +9,7 @@ import (
 	"hookt.dev/cmd/pkg/errors"
 	"hookt.dev/cmd/pkg/plugin/builtin/event/wire"
 	"hookt.dev/cmd/pkg/proto"
+	"hookt.dev/cmd/pkg/trace"
 )
 
 type Plugin struct {
@@ -94,7 +94,7 @@ func (p *Plugin) process() {
 	}
 }
 
-func (p *Plugin) Step(context.Context) any {
+func (p *Plugin) Step(ctx context.Context) any {
 	c := make(chan proto.Message)
 	p.c[c] = struct{}{}
 	it, _ := time.ParseDuration(p.Config.InactiveTimeout)
@@ -113,32 +113,30 @@ type Step struct {
 	it time.Duration
 }
 
-func str(v any) string {
-	if v == nil {
-		return ""
-	}
-	p, _ := json.Marshal(v)
-	return string(p)
+func group(ctx context.Context, name string) context.Context {
+	return trace.With(ctx, "pattern-group", name)
 }
 
 func (s *Step) Run(ctx context.Context, c *check.S) error {
 	slog.Debug("event: run",
-		"match", str(s.Match),
-		"pass", str(s.Pass),
-		"fail", str(s.Fail),
+		"match", s.Match,
+		"pass", s.Pass,
+		"fail", s.Fail,
 	)
 
-	match, err := s.p.p.Pattern(ctx, s.Match)
+	tr := trace.ContextPattern(ctx)
+
+	match, err := s.p.p.Patterns(group(ctx, "match"), s.Match)
 	if err != nil {
 		return errors.New("failed to parse match pattern: %w", err)
 	}
 
-	pass, err := s.p.p.Pattern(ctx, s.Pass)
+	pass, err := s.p.p.Patterns(group(ctx, "pass"), s.Pass)
 	if err != nil {
 		return errors.New("failed to parse pass pattern: %w", err)
 	}
 
-	fail, err := s.p.p.Pattern(ctx, s.Fail)
+	fail, err := s.p.p.Patterns(group(ctx, "fail"), s.Fail)
 	if err != nil {
 		return errors.New("failed to parse fail pattern: %w", err)
 	}
@@ -150,6 +148,7 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 		select {
 		case <-inactive.C:
 			c.Fail()
+			tr.MatchTimeout(ctx)
 			return errors.New("step has timed out after %v", s.it)
 		case msg := <-s.c:
 			if !inactive.Stop() {
@@ -159,7 +158,7 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 
 			obj := msg.Object()
 
-			match, err := match.Match(ctx, obj)
+			match, err := match.Match(group(ctx, "match"), obj)
 			if err != nil {
 				return errors.New("failed to match on pattern: %w", err)
 			}
@@ -168,7 +167,7 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 				continue
 			}
 
-			fail, err := fail.Match(ctx, obj)
+			fail, err := fail.Match(group(ctx, "fail"), obj)
 			if err != nil {
 				return errors.New("failed to match fail pattern: %w", err)
 			}
@@ -177,7 +176,7 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 				return errors.New("failure pattern matched")
 			}
 
-			ok, err := pass.Match(ctx, obj)
+			ok, err := pass.Match(group(ctx, "match"), obj)
 			if err != nil {
 				return errors.New("failed to match ok pattern: %w", err)
 			}
