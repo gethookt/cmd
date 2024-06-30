@@ -3,7 +3,6 @@ package event // import "hookt.dev/cmd/pkg/plugin/builtin/event"
 import (
 	"context"
 	"log/slog"
-	"maps"
 	"strconv"
 	"time"
 
@@ -14,20 +13,24 @@ import (
 	"hookt.dev/cmd/pkg/trace"
 )
 
+type step struct {
+	c    chan proto.Message
+	done chan struct{}
+}
+
 type Plugin struct {
 	wire.Config
 
-	p    *proto.P
-	c    map[chan proto.Message]chan struct{}
-	mux  chan proto.Message
-	stop chan (chan proto.Message)
+	p     *proto.P
+	steps []step
+	mux   chan proto.Message
+	stop  chan int
 }
 
 func New(opts ...func(*Plugin)) *Plugin {
 	p := &Plugin{
-		c:    make(map[chan proto.Message]chan struct{}),
 		mux:  make(chan proto.Message),
-		stop: make(chan chan proto.Message),
+		stop: make(chan int),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -49,6 +52,12 @@ func (p *Plugin) Plugin(_ context.Context, q *proto.P) any {
 }
 
 func (p *Plugin) Init(ctx context.Context, job *proto.Job) error {
+	switch p.Config.Mode {
+	case "", "async", "sync":
+		// ok
+	default:
+		return errors.New("invalid mode %q", p.Config.Mode)
+	}
 wire:
 	for _, source := range p.Config.Sources {
 		for _, plugin := range job.Plugins {
@@ -73,7 +82,7 @@ wire:
 		return errors.New("source %q not found in job plugins", source)
 	}
 
-	go p.process()
+	go p.schedule()
 
 	slog.Debug("event: init",
 		"config", p.Config,
@@ -82,51 +91,71 @@ wire:
 	return nil
 }
 
-func (p *Plugin) process() {
-	type indexer interface {
-		Index() int
-	}
-
+func (p *Plugin) schedule() {
 	for {
 		select {
-		case c := <-p.stop:
-			done := p.c[c]
-			close(done)
-			delete(p.c, c)
+		case i := <-p.stop:
+			s := &p.steps[i]
+			close(s.done)
+			s.done = nil
 		case msg := <-p.mux:
-			ch := maps.Clone(p.c)
-			go func() {
-				for c, done := range ch {
-					select {
-					case <-done:
-					case c <- msg:
-					}
+			var steps []step
+			for _, step := range p.steps {
+				if step.done == nil {
+					continue
 				}
-			}()
+				steps = append(steps, step)
+			}
+			switch p.Config.Mode {
+			case "sync":
+				wg := Wait(msg)
+				go func() {
+					for _, step := range steps {
+						select {
+						case <-step.done:
+							continue
+						case step.c <- wg:
+							if wg.Wait() {
+								return
+							}
+						}
+					}
+				}()
+			case "", "async":
+				go func() {
+					for _, step := range steps {
+						select {
+						case <-step.done:
+							continue
+						case step.c <- msg:
+						}
+					}
+				}()
+			}
 		}
 	}
 }
 
 func (p *Plugin) Step(ctx context.Context) any {
-	c := make(chan proto.Message)
-	done := make(chan struct{})
-	p.c[c] = done
+	s := step{
+		c:    make(chan proto.Message),
+		done: make(chan struct{}),
+	}
+	p.steps = append(p.steps, s)
 	it, _ := time.ParseDuration(p.Config.InactiveTimeout)
 	return &Step{
-		p:    p,
-		c:    c,
-		done: done,
-		it:   nonempty(it, 1*time.Minute),
+		i:  len(p.steps) - 1,
+		p:  p,
+		it: nonempty(it, 1*time.Minute),
 	}
 }
 
 type Step struct {
 	wire.Step
 
-	p    *Plugin
-	c    chan proto.Message
-	done chan struct{}
-	it   time.Duration
+	i  int
+	p  *Plugin
+	it time.Duration
 }
 
 func group(ctx context.Context, name string) context.Context {
@@ -134,10 +163,6 @@ func group(ctx context.Context, name string) context.Context {
 }
 
 func (s *Step) Run(ctx context.Context, c *check.S) error {
-	type indexer interface {
-		Index() int
-	}
-
 	slog.Debug("event: run",
 		"match", s.Match,
 		"pass", s.Pass,
@@ -170,7 +195,7 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 			c.Fail()
 			tr.MatchTimeout(ctx)
 			return errors.New("step has timed out after %v", s.it)
-		case msg := <-s.c:
+		case msg := <-s.step().c:
 			if !inactive.Stop() {
 				<-inactive.C
 			}
@@ -178,7 +203,7 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 
 			ctxt := ctx
 
-			if i, ok := msg.(indexer); ok {
+			if i, ok := msg.(Indexer); ok {
 				ctxt = trace.With(ctxt, "event-seq", strconv.Itoa(i.Index()))
 			}
 
@@ -190,6 +215,9 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 			}
 
 			if !match {
+				if wg, ok := msg.(WaitMessage); ok {
+					wg.Done(false)
+				}
 				continue
 			}
 
@@ -202,11 +230,14 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 				return errors.New("failure pattern matched")
 			}
 
-			ok, err := pass.Match(group(ctxt, "pass"), obj)
+			pass, err := pass.Match(group(ctxt, "pass"), obj)
 			if err != nil {
 				return errors.New("failed to match ok pattern: %w", err)
 			}
-			if ok {
+			if wg, ok := msg.(WaitMessage); ok {
+				wg.Done(pass)
+			}
+			if pass {
 				c.OK()
 				return nil
 			}
@@ -217,15 +248,20 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 }
 
 func (s *Step) Stop() {
-	s.p.stop <- s.c
+	s.p.stop <- s.i
 	s.drain()
+}
+
+func (s *Step) step() step {
+	return s.p.steps[s.i]
 }
 
 func (s *Step) drain() {
 	for {
 		select {
-		case <-s.c:
-		case <-s.done:
+		case _ = <-s.step().c:
+			// drop the event
+		case <-s.step().done:
 			return
 		}
 	}

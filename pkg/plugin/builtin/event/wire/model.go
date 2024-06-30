@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	Sources         []string `json:"sources"`
+	Mode            string   `json:"mode,omitempty"`
 	Timeout         string   `json:"timeout,omitempty"`
 	InactiveTimeout string   `json:"inactive_timeout,omitempty"`
 }
