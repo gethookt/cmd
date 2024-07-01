@@ -82,7 +82,7 @@ wire:
 		return errors.New("source %q not found in job plugins", source)
 	}
 
-	go p.schedule()
+	go p.schedule(ctx)
 
 	slog.Debug("event: init",
 		"config", p.Config,
@@ -91,14 +91,20 @@ wire:
 	return nil
 }
 
-func (p *Plugin) schedule() {
+func (p *Plugin) schedule(ctx context.Context) {
+	tr := trace.ContextSchedule(ctx)
+
 	for {
 		select {
 		case i := <-p.stop:
 			s := &p.steps[i]
 			close(s.done)
-			s.done = nil
+			tr.Stop(ctx, i)
 		case msg := <-p.mux:
+			ctxt := ctx
+			if idx, ok := msg.(Indexer); ok {
+				ctxt = trace.With(ctxt, "event-seq", strconv.Itoa(idx.Index()))
+			}
 			var steps []step
 			for _, step := range p.steps {
 				if step.done == nil {
@@ -109,28 +115,37 @@ func (p *Plugin) schedule() {
 			switch p.Config.Mode {
 			case "sync":
 				wg := Wait(msg)
-				go func() {
-					for _, step := range steps {
+				go func(ctx context.Context) {
+					for i, step := range steps {
+						tr.BeforeMux(ctx, msg, i)
 						select {
 						case <-step.done:
+							tr.Done(ctx, msg, i)
 							continue
 						case step.c <- wg:
-							if wg.Wait() {
+							tr.Mux(ctx, msg, i)
+
+							ok := wg.Wait()
+							tr.Wait(ctx, msg, i, ok)
+							if ok {
 								return
 							}
 						}
 					}
-				}()
+				}(ctxt)
 			case "", "async":
-				go func() {
-					for _, step := range steps {
+				go func(ctx context.Context) {
+					for i, step := range steps {
+						tr.BeforeMux(ctx, msg, i)
 						select {
 						case <-step.done:
+							tr.Done(ctx, msg, i)
 							continue
 						case step.c <- msg:
+							tr.Mux(ctx, msg, i)
 						}
 					}
-				}()
+				}(ctxt)
 			}
 		}
 	}
@@ -247,9 +262,13 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 	return nil
 }
 
-func (s *Step) Stop() {
+func (s *Step) Stop(ctx context.Context) {
+	tr := trace.ContextSchedule(ctx)
+
+	tr.BeforeStop(ctx, s.i)
 	s.p.stop <- s.i
 	s.drain()
+	tr.Drain(ctx, s.i)
 }
 
 func (s *Step) step() step {
@@ -259,8 +278,10 @@ func (s *Step) step() step {
 func (s *Step) drain() {
 	for {
 		select {
-		case _ = <-s.step().c:
-			// drop the event
+		case msg := <-s.step().c:
+			if wg, ok := msg.(WaitMessage); ok {
+				wg.Done(false)
+			}
 		case <-s.step().done:
 			return
 		}

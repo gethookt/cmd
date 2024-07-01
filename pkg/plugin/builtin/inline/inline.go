@@ -7,11 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"hookt.dev/cmd/pkg/plugin/builtin/inline/wire"
 	"hookt.dev/cmd/pkg/proto"
 	protowire "hookt.dev/cmd/pkg/proto/wire"
+	"hookt.dev/cmd/pkg/trace"
 
 	"github.com/lmittmann/tint"
 )
@@ -46,7 +48,7 @@ func (p *Plugin) Plugin(_ context.Context, q *proto.P) any {
 	return p.WithProto(q)
 }
 
-func (p *Plugin) Init(context.Context, *proto.Job) error {
+func (p *Plugin) Init(ctx context.Context, _ *proto.Job) error {
 	slog.Debug("inline: init",
 		"config", p.Config,
 	)
@@ -65,15 +67,18 @@ func (p *Plugin) Init(context.Context, *proto.Job) error {
 		return err
 	}
 
-	go p.publish(f)
+	go p.publish(ctx, f)
 
 	return nil
 }
 
-func (p *Plugin) publish(f *os.File) {
+func (p *Plugin) publish(ctx context.Context, f *os.File) {
 	defer f.Close()
 
-	dec := json.NewDecoder(f)
+	var (
+		dec = json.NewDecoder(f)
+		tr  = trace.ContextSchedule(ctx)
+	)
 
 	for index := 0; ; index++ {
 		var raw json.RawMessage
@@ -91,13 +96,19 @@ func (p *Plugin) publish(f *os.File) {
 			return
 		}
 
+		ctx := trace.With(ctx, "event-seq", strconv.Itoa(index))
+
 		switch raw[0] {
 		case '{':
 			slog.Debug("inline: publish",
 				"bytes", len(raw),
 			)
 
-			p.c <- &protowire.Message{P: raw, I: index}
+			msg := &protowire.Message{P: raw, I: index}
+
+			tr.BeforePublish(ctx, msg)
+			p.c <- msg
+			tr.Publish(ctx, msg)
 		case '[':
 			var msgs []json.RawMessage
 
@@ -114,7 +125,11 @@ func (p *Plugin) publish(f *os.File) {
 					"bytes", len(msgs[i]),
 				)
 
-				p.c <- &protowire.Message{P: msgs[i], I: index}
+				msg := &protowire.Message{P: msgs[i], I: index}
+
+				tr.BeforePublish(ctx, msg)
+				p.c <- msg
+				tr.Publish(ctx, msg)
 			}
 		default:
 			err = errors.New("unexpected JSON input")

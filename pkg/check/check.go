@@ -33,6 +33,45 @@ func (s *S) Fail() {
 	s.mu.Unlock()
 }
 
+func (s *S) Results() []Result {
+	var res []Result
+	for i, e := range s.Events {
+		f := makeFailures(e.Match, false)
+		if len(f) > 0 {
+			res = append(res, Result{
+				Type:     "match",
+				Index:    i,
+				Step:     e.Desc,
+				Failures: f,
+			})
+			continue
+		}
+
+		f = makeFailures(e.Fail, true)
+		if len(f) > 0 {
+			res = append(res, Result{
+				Type:     "fail",
+				Index:    i,
+				Step:     e.Desc,
+				Failures: f,
+			})
+			continue
+		}
+
+		f = makeFailures(e.Pass, false)
+		if len(f) > 0 {
+			res = append(res, Result{
+				Type:     "pass",
+				Index:    i,
+				Step:     e.Desc,
+				Failures: f,
+			})
+			continue
+		}
+	}
+	return res
+}
+
 func (s *S) Trace() trace.PatternTrace {
 	return trace.PatternTrace{
 		ParseKey: func(ctx context.Context, q *gojq.Query, err error) {
@@ -55,13 +94,11 @@ func (s *S) Trace() trace.PatternTrace {
 			}
 
 			s.Events[n].Desc = desc
-			s.Events[n].MarkPattern(group, pattern, false)
+			s.Events[n].MarkPattern(group, pattern, Value{
+				OK: false,
+			})
 		},
-		EqualMatch: func(ctx context.Context, a, b any, eq bool) {
-			if !eq {
-				return
-			}
-
+		EqualMatch: func(ctx context.Context, want, got any, ok bool) {
 			n, _ := strconv.Atoi(trace.Get(ctx, "step-index"))
 			group := trace.Get(ctx, "pattern-group")
 			pattern := trace.Get(ctx, "pattern")
@@ -69,38 +106,75 @@ func (s *S) Trace() trace.PatternTrace {
 			s.mu.Lock()
 			defer s.mu.Unlock()
 
-			s.Events[n].MarkPattern(group, pattern, eq)
+			s.Events[n].MarkPattern(group, pattern, Value{
+				Want: want,
+				Got:  got,
+				OK:   ok,
+			})
 		},
 	}
 }
 
-func (e *Event) MarkPattern(group, pattern string, ok bool) {
+func (e *Event) MarkPattern(group, pattern string, v Value) {
 	switch group {
 	case "match":
 		if e.Match == nil {
-			e.Match = make(map[string]bool)
+			e.Match = make(map[string]Value)
 		}
-		e.Match[pattern] = ok
+		e.Match[pattern] = v
 	case "pass":
 		if e.Pass == nil {
-			e.Pass = make(map[string]bool)
+			e.Pass = make(map[string]Value)
 		}
-		e.Pass[pattern] = ok
+		e.Pass[pattern] = v
 	case "fail":
 		if e.Fail == nil {
-			e.Fail = make(map[string]bool)
+			e.Fail = make(map[string]Value)
 		}
-		e.Fail[pattern] = ok
+		e.Fail[pattern] = v
 	default:
-		panic(fmt.Errorf("unknown group: %q (pattern=%q, ok=%v)", group, pattern, ok))
+		panic(fmt.Errorf("unknown group: %q (pattern=%q, ok=%v)", group, pattern, v))
 	}
 }
 
+type Value struct {
+	Got  any  `json:"got,omitempty"`
+	Want any  `json:"want,omitempty"`
+	OK   bool `json:"ok"`
+}
+
 type Event struct {
-	Desc  string          `json:"desc,omitempty"`
-	Match map[string]bool `json:"match"`
-	Pass  map[string]bool `json:"pass,omitempty"`
-	Fail  map[string]bool `json:"fail,omitempty"`
+	Desc  string           `json:"desc,omitempty"`
+	Match map[string]Value `json:"match"`
+	Pass  map[string]Value `json:"pass,omitempty"`
+	Fail  map[string]Value `json:"fail,omitempty"`
 }
 
 type Events []*Event
+
+type Result struct {
+	Type     string    `json:"type"`
+	Step     string    `json:"step"`
+	Index    int       `json:"index"`
+	Failures []Failure `json:"failures"`
+}
+
+type Failure struct {
+	Key      string `json:"key"`
+	Got      any    `json:"got"`
+	Expected any    `json:"expected"`
+}
+
+func makeFailures(m map[string]Value, ok bool) []Failure {
+	var failures []Failure
+	for key, v := range m {
+		if v.OK == ok {
+			failures = append(failures, Failure{
+				Key:      key,
+				Got:      v.Got,
+				Expected: v.Want,
+			})
+		}
+	}
+	return failures
+}

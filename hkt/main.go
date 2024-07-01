@@ -65,12 +65,13 @@ func newRunCommand(ctx context.Context, app *command.App) *cobra.Command {
 			if cmd.Flags().Changed("debug") {
 				ctx = trace.WithJob(ctx, trace.LogJob())
 				ctx = trace.WithPattern(ctx, trace.LogPattern())
+				ctx = trace.WithSchedule(ctx, trace.LogSchedule())
 			}
 
 			s, err := app.Engine.Run(ctx, files[0])
-
-			app.Render(s.Events)
-
+			if s != nil && len(s.Events) != 0 {
+				app.Render(s.Results())
+			}
 			return err
 		},
 		Version:      version,

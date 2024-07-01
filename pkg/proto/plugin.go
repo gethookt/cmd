@@ -31,5 +31,5 @@ type Initializer interface {
 
 type Runner interface {
 	Run(context.Context, *check.S) error
-	Stop()
+	Stop(ctx context.Context)
 }

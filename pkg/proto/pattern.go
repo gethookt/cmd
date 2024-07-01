@@ -98,7 +98,11 @@ func (p *P) Patterns(ctx context.Context, obj wire.Object) (Patterns, error) {
 
 		switch want := want.(type) {
 		case bool:
-			q.Match = func(_ context.Context, got any) (bool, error) { return want || got == nil, nil }
+			q.Match = func(_ context.Context, got any) (bool, error) {
+				ok := want && len(raw) != 0
+				tr.EqualMatch(ctx, want, got, ok)
+				return ok, nil
+			}
 		case string:
 			q.Match = p.t.Match(ctx, want)
 		default:

@@ -37,6 +37,19 @@ var (
 		EqualMatch:     func(context.Context, any, any, bool) {},
 		MatchTimeout:   func(context.Context) {},
 	}
+	nopSchedule = ScheduleTrace{
+		BeforePublish: func(context.Context, *wire.Message) {},
+		Publish:       func(context.Context, *wire.Message) {},
+		BeforeStop:    func(context.Context, int) {},
+		Stop:          func(context.Context, int) {},
+		BeforeDemux:   func(context.Context, Message) {},
+		Demux:         func(context.Context, Message) {},
+		BeforeMux:     func(context.Context, Message, int) {},
+		Mux:           func(context.Context, Message, int) {},
+		Wait:          func(context.Context, Message, int, bool) {},
+		Done:          func(context.Context, Message, int) {},
+		Drain:         func(context.Context, int) {},
+	}
 )
 
 func LogJob() JobTrace {
@@ -131,6 +144,85 @@ func LogPattern() PatternTrace {
 	}
 }
 
+func LogSchedule() ScheduleTrace {
+	return ScheduleTrace{
+		BeforePublish: func(ctx context.Context, msg *wire.Message) {
+			tags := append(attrs(ctx),
+				"message", len(msg.Bytes()),
+			)
+			slog.Info("trace: BeforePublish", tags...)
+		},
+		Publish: func(ctx context.Context, msg *wire.Message) {
+			tags := append(attrs(ctx),
+				"message", len(msg.Bytes()),
+			)
+			slog.Info("trace: Publish", tags...)
+		},
+		BeforeStop: func(ctx context.Context, i int) {
+			tags := append(attrs(ctx),
+				"step", i,
+			)
+			slog.Info("trace: BeforeStop", tags...)
+		},
+		Stop: func(ctx context.Context, i int) {
+			tags := append(attrs(ctx),
+				"step", i,
+			)
+			slog.Info("trace: Stop", tags...)
+		},
+		BeforeDemux: func(ctx context.Context, msg Message) {
+			tags := append(attrs(ctx),
+				"message", len(msg.Bytes()),
+			)
+			slog.Info("trace: BeforeDemux", tags...)
+		},
+		Demux: func(ctx context.Context, msg Message) {
+			tags := append(attrs(ctx),
+				"message", len(msg.Bytes()),
+			)
+			slog.Info("trace: Demux", tags...)
+		},
+		BeforeMux: func(ctx context.Context, msg Message, i int) {
+			tags := append(attrs(ctx),
+				"message", len(msg.Bytes()),
+				"step", i,
+			)
+			slog.Info("trace: BeforeMux", tags...)
+		},
+		Mux: func(ctx context.Context, msg Message, i int) {
+			tags := append(attrs(ctx),
+				"message", len(msg.Bytes()),
+				"step", i,
+			)
+			slog.Info("trace: Mux", tags...)
+		},
+		Wait: func(ctx context.Context, msg Message, i int, ok bool) {
+			tags := append(attrs(ctx),
+				"message", len(msg.Bytes()),
+				"step", i,
+			)
+			if !ok {
+				slog.Error("trace: Wait", tags...)
+			} else {
+				slog.Info("trace: Wait", tags...)
+			}
+		},
+		Done: func(ctx context.Context, msg Message, i int) {
+			tags := append(attrs(ctx),
+				"message", len(msg.Bytes()),
+				"step", i,
+			)
+			slog.Info("trace: Done", tags...)
+		},
+		Drain: func(ctx context.Context, i int) {
+			tags := append(attrs(ctx),
+				"step", i,
+			)
+			slog.Info("trace: Drain", tags...)
+		},
+	}
+}
+
 func attrs(ctx context.Context) []any {
 	var attrs []any
 
@@ -197,6 +289,17 @@ func ContextPattern(ctx context.Context) PatternTrace {
 	return nopPattern
 }
 
+func WithSchedule(ctx context.Context, trace ScheduleTrace) context.Context {
+	return with(ctx, &trace)
+}
+
+func ContextSchedule(ctx context.Context) ScheduleTrace {
+	if trace := from[ScheduleTrace](ctx); trace != nil {
+		return *trace
+	}
+	return nopSchedule
+}
+
 type traceKey struct{ string }
 
 func With(ctx context.Context, key, value string) context.Context {
@@ -228,6 +331,25 @@ type StepTrace struct {
 
 type PatternGroupTrace struct {
 	Pattern func(key string) PatternTrace
+}
+
+type Message interface {
+	Bytes() []byte
+	Object() any
+}
+
+type ScheduleTrace struct {
+	BeforePublish func(context.Context, *wire.Message)
+	Publish       func(context.Context, *wire.Message)
+	BeforeStop    func(context.Context, int)
+	Stop          func(context.Context, int)
+	BeforeDemux   func(context.Context, Message)
+	Demux         func(context.Context, Message)
+	BeforeMux     func(context.Context, Message, int)
+	Mux           func(context.Context, Message, int)
+	Wait          func(context.Context, Message, int, bool)
+	Done          func(context.Context, Message, int)
+	Drain         func(context.Context, int)
 }
 
 type PatternTrace struct {

@@ -69,7 +69,7 @@ func (e *Engine) Run(ctx context.Context, file string) (*check.S, error) {
 					return errors.New("step %q does not implement proto.Runner", step.ID)
 				}
 
-				defer r.Stop()
+				defer r.Stop(ctx)
 
 				if err := r.Run(ctx, &s); err != nil {
 					slog.Error("step failure",
