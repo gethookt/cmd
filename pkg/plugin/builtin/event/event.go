@@ -13,11 +13,6 @@ import (
 	"hookt.dev/cmd/pkg/trace"
 )
 
-type step struct {
-	c    chan proto.Message
-	done chan struct{}
-}
-
 type Plugin struct {
 	wire.Config
 
@@ -25,6 +20,11 @@ type Plugin struct {
 	steps []step
 	mux   chan proto.Message
 	stop  chan int
+}
+
+type step struct {
+	c    chan proto.Message
+	done chan struct{}
 }
 
 func New(opts ...func(*Plugin)) *Plugin {
@@ -184,21 +184,19 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 		"fail", s.Fail,
 	)
 
-	tr := trace.ContextPattern(ctx)
+	var (
+		tr  = trace.ContextPattern(ctx)
+		loc = new(Locals)
+	)
 
-	match, err := s.p.p.Patterns(group(ctx, "match"), s.Match)
+	pre, err := s.p.MakeSensor(ctx, &s.p.Config.Pre, loc.opts()...)
 	if err != nil {
-		return errors.New("failed to parse match pattern: %w", err)
+		return errors.New("failed to make pre sensor: %w", err)
 	}
 
-	pass, err := s.p.p.Patterns(group(ctx, "pass"), s.Pass)
+	sns, err := s.p.MakeSensor(ctx, &s.Step, loc.opts()...)
 	if err != nil {
-		return errors.New("failed to parse pass pattern: %w", err)
-	}
-
-	fail, err := s.p.p.Patterns(group(ctx, "fail"), s.Fail)
-	if err != nil {
-		return errors.New("failed to parse fail pattern: %w", err)
+		return errors.New("failed to make sensor: %w", err)
 	}
 
 	inactive := time.NewTimer(s.it)
@@ -224,36 +222,25 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 
 			obj := msg.Object()
 
-			match, err := match.Match(group(ctxt, "match"), obj)
+			ok, err := pre.Do(ctxt, obj)
 			if err != nil {
-				return errors.New("failed to match on pattern: %w", err)
+				return errors.New("failed to match pre sensor: %w", err)
 			}
-
-			if !match {
+			if !ok {
 				if wg, ok := msg.(WaitMessage); ok {
 					wg.Done(false)
 				}
 				continue
 			}
 
-			fail, err := fail.Match(group(ctxt, "fail"), obj)
+			pass, err := sns.Do(ctxt, obj)
 			if err != nil {
-				return errors.New("failed to match fail pattern: %w", err)
-			}
-			if fail {
-				c.Fail()
-				return errors.New("failure pattern matched")
-			}
-
-			pass, err := pass.Match(group(ctxt, "pass"), obj)
-			if err != nil {
-				return errors.New("failed to match ok pattern: %w", err)
+				return errors.New("failed to match sensor: %w", err)
 			}
 			if wg, ok := msg.(WaitMessage); ok {
 				wg.Done(pass)
 			}
 			if pass {
-				c.OK()
 				return nil
 			}
 		}

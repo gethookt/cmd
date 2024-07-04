@@ -13,6 +13,7 @@ type Config struct {
 	Mode            string   `json:"mode,omitempty"`
 	Timeout         string   `json:"timeout,omitempty"`
 	InactiveTimeout string   `json:"inactive_timeout,omitempty"`
+	Pre             Step     `json:"pre,omitempty"`
 }
 
 func (c Config) GetTimeout() time.Duration {

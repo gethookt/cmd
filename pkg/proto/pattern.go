@@ -47,17 +47,18 @@ func (p Patterns) Match(ctx context.Context, obj any) (bool, error) {
 		}
 	}
 
-	return len(p) != 0, nil
+	return true, nil
 }
 
 func pattern(ctx context.Context, name string) context.Context {
 	return trace.With(ctx, "pattern", name)
 }
 
-func (p *P) Patterns(ctx context.Context, obj wire.Object) (Patterns, error) {
+func (p *P) Patterns(ctx context.Context, obj wire.Object, opts ...TOption) (Patterns, error) {
 	var (
 		pt  = make(Patterns, 0, len(obj))
 		tr  = trace.ContextPattern(ctx)
+		t   = p.t.With(opts...)
 		err error
 	)
 
@@ -104,7 +105,7 @@ func (p *P) Patterns(ctx context.Context, obj wire.Object) (Patterns, error) {
 				return ok, nil
 			}
 		case string:
-			q.Match = p.t.Match(ctx, want)
+			q.Match = t.Match(ctx, want)
 		default:
 			q.Match = func(_ context.Context, got any) (bool, error) {
 				ok := cmpEqual(want, got)

@@ -47,7 +47,7 @@ type P struct {
 
 func New(opts ...func(*P)) *P {
 	p := &P{
-		t: &T{},
+		t: NewT(),
 		m: make(map[string]Interface),
 	}
 	for _, opt := range opts {

@@ -5,6 +5,7 @@ import (
 	"context"
 	"math/rand"
 	"os"
+	"slices"
 	"strings"
 	"text/template"
 
@@ -20,7 +21,13 @@ type TOption func(*template.Template) *template.Template
 
 type T struct {
 	Options []TOption
-	Vars    async.Map
+	Vars    *async.Map
+}
+
+func NewT() *T {
+	return &T{
+		Vars: &async.Map{},
+	}
 }
 
 func (p *P) Evaluate(tmpl string, data any) ([]byte, error) {
@@ -36,6 +43,13 @@ func (p *P) Evaluate(tmpl string, data any) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
+}
+
+func (t *T) With(opts ...TOption) *T {
+	return &T{
+		Options: append(slices.Clone(t.Options), opts...),
+		Vars:    t.Vars,
+	}
 }
 
 func (t *T) Parse(name, data string) (*template.Template, error) {
@@ -55,9 +69,9 @@ func (t *T) Parse(name, data string) (*template.Template, error) {
 func (t *T) funcs() template.FuncMap {
 	return map[string]any{
 		"xrand":    xrand,
-		"setvar":   t.set,
+		"setvar":   t.setvar,
 		"seterror": t.seterror,
-		"var":      t.get,
+		"var":      t.getvar,
 		"setenv":   os.Setenv,
 		"env":      os.Getenv,
 	}
@@ -102,12 +116,12 @@ func (t *T) Match(ctx context.Context, data string) func(context.Context, any) (
 	}
 }
 
-func (t *T) set(name string, value any) any {
+func (t *T) setvar(name string, value any) any {
 	t.Vars.Store(name, value)
 	return value
 }
 
-func (t *T) get(name string) any {
+func (t *T) getvar(name string) any {
 	value, _ := t.Vars.Load(name)
 	return value
 }
