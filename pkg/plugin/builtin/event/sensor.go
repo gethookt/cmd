@@ -21,21 +21,21 @@ func MakeTags() *Tags {
 	}
 }
 
-func (t *Tags) tag(name string, value ...any) (any, error) {
-	switch len(value) {
+func (t *Tags) tag(name string, values ...any) (any, error) {
+	switch len(values) {
 	case 0:
 		t.mu.Lock()
-		value, ok := t.m[name]
+		v, ok := t.m[name]
 		t.mu.Unlock()
 		if !ok {
 			return nil, errors.New("tag not found: %q", name)
 		}
-		return value, nil
+		return v, nil
 	case 1:
 		t.mu.Lock()
-		t.m[name] = value
+		t.m[name] = values[0]
 		t.mu.Unlock()
-		return value, nil
+		return values[0], nil
 	default:
 		return nil, errors.New("too many arguments for tag: %q", name)
 	}

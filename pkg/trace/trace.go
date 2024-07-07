@@ -32,7 +32,7 @@ var (
 		ParseKey:       func(context.Context, *gojq.Query, error) {},
 		UnmarshalValue: func(context.Context, []byte, any, error) {},
 		TemplateValue:  func(context.Context, string, *template.Template, error) {},
-		ExecuteMatch:   func(context.Context, []byte, error) {},
+		ExecuteMatch:   func(context.Context, []byte, []byte, error) {},
 		UnmarshalMatch: func(context.Context, []byte, any, error) {},
 		EqualMatch:     func(context.Context, any, any, bool) {},
 		MatchTimeout:   func(context.Context) {},
@@ -61,6 +61,10 @@ func LogJob() JobTrace {
 		MatchStep:  func() {},
 		TapMessage: func() {},
 	}
+}
+
+func NopPattern() PatternTrace {
+	return nopPattern
 }
 
 func LogPattern() PatternTrace {
@@ -97,9 +101,10 @@ func LogPattern() PatternTrace {
 				slog.Info("trace: TemplateValue", tags...)
 			}
 		},
-		ExecuteMatch: func(ctx context.Context, p []byte, err error) {
+		ExecuteMatch: func(ctx context.Context, data, result []byte, err error) {
 			tags := append(attrs(ctx),
-				"raw", string(p),
+				"data", string(data),
+				"result", string(result),
 			)
 			if err != nil {
 				tags = append(tags, tint.Err(err))
@@ -356,7 +361,7 @@ type PatternTrace struct {
 	ParseKey       func(context.Context, *gojq.Query, error)
 	UnmarshalValue func(context.Context, []byte, any, error)
 	TemplateValue  func(context.Context, string, *template.Template, error)
-	ExecuteMatch   func(context.Context, []byte, error)
+	ExecuteMatch   func(context.Context, []byte, []byte, error)
 	UnmarshalMatch func(context.Context, []byte, any, error)
 	EqualMatch     func(context.Context, any, any, bool)
 	MatchTimeout   func(context.Context)
@@ -386,9 +391,9 @@ func (pt PatternTrace) Join(extra PatternTrace) PatternTrace {
 	}
 	if extra.ExecuteMatch != nil {
 		fn := pt.ExecuteMatch
-		pt.ExecuteMatch = func(ctx context.Context, p []byte, err error) {
-			fn(ctx, p, err)
-			extra.ExecuteMatch(ctx, p, err)
+		pt.ExecuteMatch = func(ctx context.Context, data, result []byte, err error) {
+			fn(ctx, data, result, err)
+			extra.ExecuteMatch(ctx, data, result, err)
 		}
 	}
 	if extra.UnmarshalMatch != nil {
@@ -400,7 +405,7 @@ func (pt PatternTrace) Join(extra PatternTrace) PatternTrace {
 	}
 	if extra.EqualMatch != nil {
 		fn := pt.EqualMatch
-		pt.EqualMatch = func(ctx context.Context, want any, got any, ok bool) {
+		pt.EqualMatch = func(ctx context.Context, want, got any, ok bool) {
 			fn(ctx, want, got, ok)
 			extra.EqualMatch(ctx, want, got, ok)
 		}

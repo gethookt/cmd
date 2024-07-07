@@ -92,7 +92,7 @@ func (t *T) Match(ctx context.Context, data string) func(context.Context, any) (
 		)
 
 		err := tmpl.Execute(&buf, got)
-		tr.ExecuteMatch(ctx, buf.Bytes(), err)
+		tr.ExecuteMatch(ctx, []byte(data), buf.Bytes(), err)
 		if err != nil {
 			return false, errors.New("failed to evaluate %q: %w", data, err)
 		}

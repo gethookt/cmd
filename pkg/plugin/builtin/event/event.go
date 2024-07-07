@@ -30,7 +30,7 @@ type step struct {
 func New(opts ...func(*Plugin)) *Plugin {
 	p := &Plugin{
 		mux:  make(chan proto.Message),
-		stop: make(chan int),
+		stop: make(chan int, 1),
 	}
 	for _, opt := range opts {
 		opt(p)
@@ -189,7 +189,7 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 		tags = MakeTags()
 	)
 
-	pre, err := s.p.MakeSensor(ctx, &s.p.Config.Pre, tags.opts()...)
+	pre, err := s.p.MakeSensor(nop(ctx), &s.p.Config.Pre, tags.opts()...)
 	if err != nil {
 		return errors.New("failed to make pre sensor: %w", err)
 	}
@@ -222,15 +222,9 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 
 			obj := msg.Object()
 
-			ok, err := pre.Do(ctxt, obj)
+			_, err := pre.Do(nop(ctxt), obj)
 			if err != nil {
 				return errors.New("failed to match pre sensor: %w", err)
-			}
-			if !ok {
-				if wg, ok := msg.(WaitMessage); ok {
-					wg.Done(false)
-				}
-				continue
 			}
 
 			pass, err := sns.Do(ctxt, obj)
@@ -283,4 +277,8 @@ func nonempty[T comparable](t ...T) T {
 		}
 	}
 	return zero
+}
+
+func nop(ctx context.Context) context.Context {
+	return trace.WithPattern(ctx, trace.NopPattern())
 }
