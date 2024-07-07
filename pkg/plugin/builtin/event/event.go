@@ -185,16 +185,16 @@ func (s *Step) Run(ctx context.Context, c *check.S) error {
 	)
 
 	var (
-		tr  = trace.ContextPattern(ctx)
-		loc = new(Locals)
+		tr   = trace.ContextPattern(ctx)
+		tags = MakeTags()
 	)
 
-	pre, err := s.p.MakeSensor(ctx, &s.p.Config.Pre, loc.opts()...)
+	pre, err := s.p.MakeSensor(ctx, &s.p.Config.Pre, tags.opts()...)
 	if err != nil {
 		return errors.New("failed to make pre sensor: %w", err)
 	}
 
-	sns, err := s.p.MakeSensor(ctx, &s.Step, loc.opts()...)
+	sns, err := s.p.MakeSensor(ctx, &s.Step, tags.opts()...)
 	if err != nil {
 		return errors.New("failed to make sensor: %w", err)
 	}

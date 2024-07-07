@@ -2,34 +2,50 @@ package event
 
 import (
 	"context"
+	"sync"
 	"text/template"
 
-	"hookt.dev/cmd/pkg/async"
 	"hookt.dev/cmd/pkg/errors"
 	"hookt.dev/cmd/pkg/plugin/builtin/event/wire"
 	"hookt.dev/cmd/pkg/proto"
 )
 
-type Locals struct {
-	async.Map
+type Tags struct {
+	mu sync.Mutex
+	m  map[string]any
 }
 
-func (l *Locals) setlocal(name string, value any) any {
-	l.Map.Store(name, value)
-	return value
+func MakeTags() *Tags {
+	return &Tags{
+		m: make(map[string]any),
+	}
 }
 
-func (l *Locals) getlocal(name string) any {
-	value, _ := l.Map.Load(name)
-	return value
+func (t *Tags) tag(name string, value ...any) (any, error) {
+	switch len(value) {
+	case 0:
+		t.mu.Lock()
+		value, ok := t.m[name]
+		t.mu.Unlock()
+		if !ok {
+			return nil, errors.New("tag not found: %q", name)
+		}
+		return value, nil
+	case 1:
+		t.mu.Lock()
+		t.m[name] = value
+		t.mu.Unlock()
+		return value, nil
+	default:
+		return nil, errors.New("too many arguments for tag: %q", name)
+	}
 }
 
-func (l *Locals) opts() []proto.TOption {
+func (t *Tags) opts() []proto.TOption {
 	return []proto.TOption{
-		func(t *template.Template) *template.Template {
-			return t.Funcs(template.FuncMap{
-				"setlocal": l.setlocal,
-				"local":    l.getlocal,
+		func(tmpl *template.Template) *template.Template {
+			return tmpl.Funcs(template.FuncMap{
+				"tag": t.tag,
 			})
 		},
 	}
