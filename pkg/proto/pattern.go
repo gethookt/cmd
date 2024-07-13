@@ -54,6 +54,65 @@ func pattern(ctx context.Context, name string) context.Context {
 	return trace.With(ctx, "pattern", name)
 }
 
+func (p *P) Template(ctx context.Context, obj wire.Object, out any, opts ...TOption) error {
+	var (
+		err error
+		res = make(map[string]any)
+		t   = p.t.With(opts...)
+	)
+
+loop:
+	for k, raw := range obj {
+		var want any
+
+		e := yaml.Unmarshal(raw, &want)
+		if e != nil {
+			err = errors.Join(
+				err,
+				errors.New("failed to unmarshal value for %q: %w", k, e),
+			)
+			continue loop
+		}
+
+		var s string
+
+		switch want := want.(type) {
+		case []byte:
+			s = string(want)
+		case string:
+			s = want
+		default:
+			res[k] = want
+			continue loop
+		}
+
+		p, e := t.Evaluate(s, nil)
+		if e != nil {
+			err = errors.Join(
+				err,
+				errors.New("failed to evaluate template %q: %w", s, e),
+			)
+			continue loop
+		}
+
+		res[k] = string(p)
+	}
+	if err != nil {
+		return err
+	}
+
+	q, err := yaml.Marshal(res)
+	if err != nil {
+		return errors.New("failed to marshal result: %w", err)
+	}
+
+	if err := yaml.Unmarshal(q, out); err != nil {
+		return errors.New("failed to unmarshal result: %w", err)
+	}
+
+	return nil
+}
+
 func (p *P) Patterns(ctx context.Context, obj wire.Object, opts ...TOption) (Patterns, error) {
 	var (
 		pt  = make(Patterns, 0, len(obj))

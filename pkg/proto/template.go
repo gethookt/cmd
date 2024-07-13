@@ -77,6 +77,21 @@ func (t *T) funcs() template.FuncMap {
 	}
 }
 
+func (t *T) Evaluate(tmpl string, data any) ([]byte, error) {
+	var buf bytes.Buffer
+
+	tpl, err := t.Parse("", tmpl)
+	if err != nil {
+		return nil, errors.New("failed to parse template %q: %w", tmpl, err)
+	}
+
+	if err := tpl.Execute(&buf, data); err != nil {
+		return nil, errors.New("failed to evaluate template %q: %w", tmpl, err)
+	}
+
+	return buf.Bytes(), nil
+}
+
 func (t *T) Match(ctx context.Context, data string) func(context.Context, any) (bool, error) {
 	tr := trace.ContextPattern(ctx)
 	tmpl, err := t.Parse("", data)
