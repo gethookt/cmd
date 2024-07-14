@@ -3,16 +3,16 @@ package hookt
 import (
 	"context"
 	"log/slog"
-	"os"
 	"strconv"
 
-	"github.com/lmittmann/tint"
-	"golang.org/x/sync/errgroup"
 	"hookt.dev/cmd/pkg/check"
 	"hookt.dev/cmd/pkg/errors"
 	"hookt.dev/cmd/pkg/plugin/builtin"
 	"hookt.dev/cmd/pkg/proto"
 	"hookt.dev/cmd/pkg/trace"
+
+	"github.com/lmittmann/tint"
+	"golang.org/x/sync/errgroup"
 )
 
 var plugins []proto.Interface
@@ -39,12 +39,7 @@ func New(opts ...func(*Engine)) *Engine {
 	return ngn
 }
 
-func (e *Engine) Run(ctx context.Context, file string) (*check.S, error) {
-	p, err := os.ReadFile(file)
-	if err != nil {
-		return nil, errors.New("failed to read file: %w", err)
-	}
-
+func (e *Engine) Run(ctx context.Context, p []byte) (*check.S, error) {
 	var s check.S
 
 	ctx = trace.WithPattern(ctx, trace.ContextPattern(ctx).Join(s.Trace()))
