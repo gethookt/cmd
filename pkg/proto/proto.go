@@ -50,6 +50,10 @@ func New(opts ...func(*P)) *P {
 		t: NewT(),
 		m: make(map[string]Interface),
 	}
+	return p.With(opts...)
+}
+
+func (p *P) With(opts ...func(*P)) *P {
 	for _, opt := range opts {
 		opt(p)
 	}

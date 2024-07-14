@@ -7,6 +7,7 @@ import (
 	"os/signal"
 
 	"hookt.dev/cmd/pkg/command"
+	"hookt.dev/cmd/pkg/errors"
 	"hookt.dev/cmd/pkg/trace"
 
 	"github.com/spf13/cobra"
@@ -68,7 +69,12 @@ func newRunCommand(ctx context.Context, app *command.App) *cobra.Command {
 				ctx = trace.WithSchedule(ctx, trace.LogSchedule())
 			}
 
-			s, err := app.Engine.Run(ctx, files[0])
+			p, err := os.ReadFile(files[0])
+			if err != nil {
+				return errors.New("failed to read file: %w", err)
+			}
+
+			s, err := app.Engine.Run(ctx, p)
 			if s != nil && len(s.Events) != 0 {
 				app.Render(s.Results())
 			}
