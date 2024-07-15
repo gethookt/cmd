@@ -6,7 +6,7 @@ require (
 	github.com/Masterminds/sprig v2.22.0+incompatible
 	github.com/google/go-cmp v0.6.0
 	github.com/itchyny/gojq v0.12.16
-	github.com/lmittmann/tint v1.0.4
+	github.com/lmittmann/tint v1.0.5
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/sync v0.7.0
